@@ -26,7 +26,7 @@ jobs:
           flake8 || true  # don't fail on lint here unless you prefer
 
       - name: Run tests
-        run: pytest -q
+        run: python -m pytest -q
 
   train-and-upload:
     needs: lint-and-test
