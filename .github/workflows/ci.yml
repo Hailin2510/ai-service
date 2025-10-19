@@ -25,6 +25,9 @@ jobs:
           pip install flake8
           flake8 || true  # don't fail on lint here unless you prefer
 
+      - name: Train baseline model (for tests)
+        run: python app/train.py
+
       - name: Run tests
         run: python -m pytest -q
 
