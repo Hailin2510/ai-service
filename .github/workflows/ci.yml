@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Lint (flake8)
+        run: |
+          pip install flake8
+          flake8 || true  # don't fail on lint here unless you prefer
+
+      - name: Run tests
+        run: pytest -q
+
+  train-and-upload:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Quick train (smoke)
+        run: |
+          python model/train.py --out models/model.joblib --metrics out/metrics.json --seed 42 --version v0.1
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-joblib
+          path: models/model.joblib
+
+      - name: Upload metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-metrics
+          path: out/metrics.json
