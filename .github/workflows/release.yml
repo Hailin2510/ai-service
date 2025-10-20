@@ -6,9 +6,8 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
-  releases: write
 
 jobs:
   release:
