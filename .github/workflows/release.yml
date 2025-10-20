@@ -1,4 +1,4 @@
-name: 🚀 Full Release Pipeline
+name: Full Release Pipeline
 
 on:
   push:

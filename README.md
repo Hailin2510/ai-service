@@ -40,10 +40,10 @@ docker run -p 8000:8000 ghcr.io/<org>/<repo>:v0.1
 - `release.yml` triggers on tag `v*`: builds and pushes Docker to GHCR and publishes a GitHub Release that includes `out/metrics.json` and `CHANGELOG.md`.
 
 ## !IMPORTANT: Docker image URL
-`ghcr.io/hailin2510/ai-service:v0.2`
+`ghcr.io/Hailin2510/diabetes-predictor-ai:v0.2`
 Test locally
-docker pull ghcr.io/xw-ai/ai-service:v0.2
-docker run -p 8000:8000 ghcr.io/xw-ai/ai-service:v0.2
+docker pull ghcr.io/Hailin2510/diabetes-predictor-ai:v0.2
+docker run -p 8000:8000 ghcr.io/Hailin2510/diabetes-predictor-ai:v0.2
 Then visit:
 http://localhost:8000/health
 You should see a response like: {"status":"ok"}
