@@ -10,24 +10,30 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
+      # 1️⃣ Checkout repository
       - uses: actions/checkout@v4
 
+      # 2️⃣ Set up Python
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install deps
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # 4️⃣ Lint with flake8
       - name: Lint (flake8)
         run: |
           pip install flake8
-          flake8 || true  # don't fail on lint here unless you prefer
+          flake8 || true  # optional: don't fail CI on lint
 
-      - name: Train baseline model (for tests)
-        run: python model/train.py
+      # 5️⃣ Train baseline model for smoke tests
+      - name: Train baseline model
+        run: python model/train.py --version v0.1 --out model/model.joblib --metrics out/metrics.json
 
+      # 6️⃣ Run unit tests
       - name: Run tests
         run: python -m pytest -q
 
@@ -35,27 +41,32 @@ jobs:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
+      # 1️⃣ Checkout repository
       - uses: actions/checkout@v4
 
+      # 2️⃣ Set up Python
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install deps
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # 4️⃣ Quick model train (smoke)
       - name: Quick train (smoke)
-        run: |
-          python model/train.py --out models/model.joblib --metrics out/metrics.json --seed 42 --version v0.1
+        run: python model/train.py --version v0.1 --seed 42 --out model/model.joblib --metrics out/metrics.json
 
+      # 5️⃣ Upload model artifact
       - name: Upload model artifact
         uses: actions/upload-artifact@v4
         with:
           name: model-joblib
-          path: models/model.joblib
+          path: model/model.joblib
 
-      - name: Upload metrics
+      # 6️⃣ Upload metrics
+      - name: Upload training metrics
         uses: actions/upload-artifact@v4
         with:
           name: training-metrics
