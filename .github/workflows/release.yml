@@ -7,7 +7,7 @@ on:
 
 jobs:
   release:
-    name: Build, Train, Dockerize & Release
+    name: Build, Train, Dockerize & Release (Cross-Platform)
     runs-on: ubuntu-latest
 
     steps:
@@ -27,17 +27,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4️⃣ Train/update model for this release
+      # 4️⃣ Train/update model
       - name: Train model
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          python model/train.py --version $VERSION --out model/model.joblib --metrics out/metrics.json --seed 42
+          python model/train.py \
+            --version $VERSION \
+            --out model/model.joblib \
+            --metrics out/metrics.json \
+            --seed 42
 
-      # 5️⃣ Set up Docker Buildx
+      # 5️⃣ Auto-update CHANGELOG.md based on commits since last tag
+      - name: Auto-generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^)
+          echo "Last tag: $LAST_TAG"
+          echo "## ${GITHUB_REF_NAME} — $(date +'%Y-%m-%d')" > temp_changelog.md
+          git log $LAST_TAG..HEAD --pretty=format:'- %s (%an)' >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          cat CHANGELOG.md >> temp_changelog.md
+          mv temp_changelog.md CHANGELOG.md
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for ${{ github.ref_name }}" || echo "No changes to commit"
+
+      # 6️⃣ Set up QEMU for cross-platform builds
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      # 7️⃣ Set up Docker Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 6️⃣ Log in to GitHub Container Registry
+      # 8️⃣ Log in to GitHub Container Registry
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -45,30 +67,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 7️⃣ Build Docker image
-      - name: Build Docker image
+      # 9️⃣ Build multi-arch Docker image and push
+      - name: Build & push multi-arch Docker image
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
-          docker build --build-arg MODEL_VERSION=${{ github.ref_name }} -t $IMAGE .
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg MODEL_VERSION=${{ github.ref_name }} \
+            -t $IMAGE \
+            --push .
 
-      # 8️⃣ Smoke test Docker container
+      # 🔟 Smoke test Docker container (amd64)
       - name: Smoke test container
         env:
-          IMAGE: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
           docker run -d -p 8000:8000 --name smoke $IMAGE
           sleep 5
           curl -f http://localhost:8000/health
           docker rm -f smoke
 
-      # 9️⃣ Push Docker image
-      - name: Push Docker image
-        env:
-          IMAGE: ghcr.io/${{ github.repository }}:${{ github.ref_name }}
-        run: docker push $IMAGE
-
-      # 🔟 Ensure metrics exist
+      # 1️⃣1️⃣ Ensure metrics exist
       - name: Prepare metrics
         run: |
           mkdir -p out
@@ -76,7 +96,7 @@ jobs:
             echo '{"version":"${GITHUB_REF_NAME}"}' > out/metrics.json
           fi
 
-      # 1️⃣1️⃣ Create GitHub Release and upload assets
+      # 1️⃣2️⃣ Create GitHub Release and upload assets
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -86,7 +106,7 @@ jobs:
             🧠 **Automatic Release for** `${{ github.ref_name }}`
 
             ✅ Model retrained and validated  
-            ✅ Docker image built and pushed to GHCR  
+            ✅ Docker image built and pushed to GHCR (multi-arch)  
             ✅ Container smoke test passed  
             ✅ Metrics + model + CHANGELOG uploaded  
 
