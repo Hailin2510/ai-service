@@ -10,63 +10,65 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      # 1️⃣ Checkout repository
       - uses: actions/checkout@v4
-
-      # 2️⃣ Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
-
-      # 3️⃣ Install dependencies
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      # 4️⃣ Lint with flake8
       - name: Lint (flake8)
         run: |
           pip install flake8
-          flake8 || true  # optional: don't fail CI on lint
-
-      # 5️⃣ Train baseline model for smoke tests
-      - name: Train baseline model
-        run: python model/train.py --version v0.1 --out model/model.joblib --metrics out/metrics.json
-
-      # 6️⃣ Run unit tests
+          flake8 || true
+      - name: Train baseline model (smoke)
+        run: python model/train.py --version v0.1 --seed 42 --out model/model.joblib --metrics out/metrics.json
       - name: Run tests
         run: python -m pytest -q
 
-  train-and-upload:
+  docker-smoke-test:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
-      # 1️⃣ Checkout repository
       - uses: actions/checkout@v4
 
-      # 2️⃣ Set up Python
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # 3️⃣ Install dependencies
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Build Docker image for smoke test
+        run: docker build --build-arg MODEL_VERSION=v0.1 -t ci-smoke-test:latest .
 
-      # 4️⃣ Quick model train (smoke)
-      - name: Quick train (smoke)
-        run: python model/train.py --version v0.1 --seed 42 --out model/model.joblib --metrics out/metrics.json
+      - name: Run smoke test container
+        run: |
+          docker run -d -p 8000:8000 --name smoke ci-smoke-test:latest
+          # Wait for FastAPI container to be ready
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/health; then
+              echo "✅ Healthcheck passed"
+              break
+            else
+              echo "Waiting for container..."
+              sleep 3
+            fi
+          done
+          # Test /predict endpoint
+          curl -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"age": 50, "sex": 1, "bmi": 25.0, "bp": 80, "s1": 150, "s2": 4, "s3": 4, "s4": 3, "s5": 4, "s6": 5}' \
+            -f
+          docker rm -f smoke
 
-      # 5️⃣ Upload model artifact
-      - name: Upload model artifact
+  upload-artifacts:
+    needs: [lint-and-test, docker-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload model
         uses: actions/upload-artifact@v4
         with:
           name: model-joblib
           path: model/model.joblib
-
-      # 6️⃣ Upload metrics
-      - name: Upload training metrics
+      - name: Upload metrics
         uses: actions/upload-artifact@v4
         with:
           name: training-metrics
