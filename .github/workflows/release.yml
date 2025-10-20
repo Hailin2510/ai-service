@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   release:
     name: Build, Train, Dockerize & Release (Cross-Platform)
@@ -59,29 +63,26 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push multi-arch Docker image
+        env:
+          IMAGE_VERSION: ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.ref_name }}
+          IMAGE_LATEST: ghcr.io/${{ github.repository_owner }}/ai-service:latest
         run: |
-          IMAGE="ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/${{ github.event.repository.name }}:${{ github.ref_name }}"
+          echo "Building and pushing Docker image: $IMAGE_VERSION"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg MODEL_VERSION=${{ github.ref_name }} \
-            -t $IMAGE \
+            -t $IMAGE_VERSION \
+            -t $IMAGE_LATEST \
             --push .
 
       - name: Smoke test container
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.ref_name }}
         run: |
-          IMAGE="ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/${{ github.event.repository.name }}:${{ github.ref_name }}"
-          echo "Using image: $IMAGE"
+          echo "Running smoke test for image: $IMAGE"
           docker run -d -p 8000:8000 --name smoke $IMAGE
-          # wait for container to be ready
-          for i in {1..10}; do
-            if curl -f http://localhost:8000/health; then
-              echo "✅ Healthcheck passed"
-              break
-            else
-              echo "Waiting for container..."
-              sleep 3
-            fi
-          done
+          sleep 5
+          curl -f http://localhost:8000/health
           docker rm -f smoke
 
       - name: Prepare metrics
