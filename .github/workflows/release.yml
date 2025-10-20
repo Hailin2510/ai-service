@@ -59,9 +59,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build & push multi-arch Docker image
-        env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
+          IMAGE="ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/${{ github.event.repository.name }}:${{ github.ref_name }}"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --build-arg MODEL_VERSION=${{ github.ref_name }} \
@@ -69,12 +68,20 @@ jobs:
             --push .
 
       - name: Smoke test container
-        env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
+          IMAGE="ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/${{ github.event.repository.name }}:${{ github.ref_name }}"
+          echo "Using image: $IMAGE"
           docker run -d -p 8000:8000 --name smoke $IMAGE
-          sleep 5
-          curl -f http://localhost:8000/health
+          # wait for container to be ready
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/health; then
+              echo "✅ Healthcheck passed"
+              break
+            else
+              echo "Waiting for container..."
+              sleep 3
+            fi
+          done
           docker rm -f smoke
 
       - name: Prepare metrics
