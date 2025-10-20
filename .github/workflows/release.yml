@@ -8,6 +8,7 @@ on:
 permissions:
   contents: read
   packages: write
+  releases: write
 
 jobs:
   release:
@@ -102,6 +103,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
+          token: ${{ secrets.PAT_TOKEN }}       # <-- use a PAT with release access
           name: "Release ${{ github.ref_name }}"
           body: |
             🧠 **Automatic Release for** `${{ github.ref_name }}`
@@ -116,5 +118,6 @@ jobs:
             model/model.joblib
             out/metrics.json
             CHANGELOG.md
+          overwrite_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
