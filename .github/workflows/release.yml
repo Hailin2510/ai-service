@@ -64,20 +64,20 @@ jobs:
 
       - name: Build & push multi-arch Docker image
         env:
-          IMAGE_VERSION: ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.ref_name }}
-          IMAGE_LATEST: ghcr.io/${{ github.repository_owner }}/ai-service:latest
+          IMAGE_VERSION: ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]'):$(echo ${{ github.ref_name }} | tr '[:upper:]' '[:lower:]')
+          IMAGE_LATEST: ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]'):latest
         run: |
           echo "Building and pushing Docker image: $IMAGE_VERSION"
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
-            --build-arg MODEL_VERSION=${{ github.ref_name }} \
+            --build-arg MODEL_VERSION=$(echo ${{ github.ref_name }} | tr '[:upper:]' '[:lower:]') \
             -t $IMAGE_VERSION \
             -t $IMAGE_LATEST \
             --push .
 
       - name: Smoke test container
         env:
-          IMAGE: ghcr.io/${{ github.repository_owner }}/ai-service:${{ github.ref_name }}
+          IMAGE: ghcr.io/$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')/$(echo ${{ github.event.repository.name }} | tr '[:upper:]' '[:lower:]'):$(echo ${{ github.ref_name }} | tr '[:upper:]' '[:lower:]')
         run: |
           echo "Running smoke test for image: $IMAGE"
           docker run -d -p 8000:8000 --name smoke $IMAGE
