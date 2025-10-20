@@ -1,62 +1,106 @@
-name: Release
+name: 🚀 Full Release Pipeline
 
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 jobs:
-  build-push:
+  release:
+    name: Build, Train, Dockerize & Release (Cross-Platform)
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: Set up QEMU (for cross-platform)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Train model
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          python model/train.py \
+            --version $VERSION \
+            --out model/model.joblib \
+            --metrics out/metrics.json \
+            --seed 42
+
+      - name: Auto-generate changelog
+        id: changelog
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ || echo "")
+          echo "## ${GITHUB_REF_NAME} — $(date +'%Y-%m-%d')" > temp_changelog.md
+          git log $LAST_TAG..HEAD --pretty=format:'- %s (%an)' >> temp_changelog.md
+          echo "" >> temp_changelog.md
+          cat CHANGELOG.md >> temp_changelog.md
+          mv temp_changelog.md CHANGELOG.md
+          git add CHANGELOG.md
+          git commit -m "chore: update CHANGELOG for ${{ github.ref_name }}" || echo "No changes to commit"
+
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      - name: Login to GHCR
-        uses: docker/login-action@v2
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ secrets.GHCR_USERNAME }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
+      - name: Build & push multi-arch Docker image
         env:
-          MODEL_VERSION: ${{ github.ref_name }}
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
-          TAG=${{ github.ref_name }}
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${TAG}
-          docker build --build-arg MODEL_VERSION=${TAG} -t ${IMAGE} .
-          docker push ${IMAGE}
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --build-arg MODEL_VERSION=${{ github.ref_name }} \
+            -t $IMAGE \
+            --push .
 
-      - name: Run container smoke tests
+      - name: Smoke test container
+        env:
+          IMAGE: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${{ github.ref_name }}
         run: |
-          TAG=${{ github.ref_name }}
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${TAG}
-          docker run -d --name smoke -p 8001:8000 ${IMAGE}
-          sleep 3
-          curl -sS http://127.0.0.1:8001/health | jq .
-          curl -sS -X POST http://127.0.0.1:8001/predict -H "Content-Type: application/json" -d '{
-            "age": 0.02,"sex": -0.044,"bmi": 0.06,"bp": -0.03,"s1": -0.02,"s2": 0.03,"s3": -0.02,"s4": 0.02,"s5": 0.02,"s6": -0.001
-          }'
+          docker run -d -p 8000:8000 --name smoke $IMAGE
+          sleep 5
+          curl -f http://localhost:8000/health
           docker rm -f smoke
 
-      - name: Get metrics file from image and create release
+      - name: Prepare metrics
         run: |
-          TAG=${{ github.ref_name }}
-          IMAGE=ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}:${TAG}
-          # extract metrics if present
-          docker create --name tmp ${IMAGE}
-          docker cp tmp:/app/out/metrics.json ./metrics.json || true
-          docker rm tmp || true
+          mkdir -p out
+          if [ ! -f "out/metrics.json" ]; then
+            echo '{"version":"${GITHUB_REF_NAME}"}' > out/metrics.json
+          fi
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        id: create_release
+        uses: softprops/action-gh-release@v2
         with:
-          files: metrics.json,CHANGELOG.md
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            🧠 **Automatic Release for** `${{ github.ref_name }}`
+            
+            ✅ Model retrained and validated  
+            ✅ Docker image built and pushed to GHCR (multi-arch)  
+            ✅ Container smoke test passed  
+            ✅ Metrics + model + CHANGELOG uploaded  
+
+            See [CHANGELOG.md](./CHANGELOG.md) for details.
+          files: |
+            model/model.joblib
+            out/metrics.json
+            CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

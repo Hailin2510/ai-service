@@ -2,59 +2,72 @@ name: CI
 
 on:
   push:
-    branches: [phase0.1]
+    branches: [main]
   pull_request:
-    branches: [phase0.1]
+    branches: [main]
 
 jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
-
-      - name: Install deps
+      - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Lint (flake8)
         run: |
           pip install flake8
-          flake8 || true  # don't fail on lint here unless you prefer
-
-      - name: Train baseline model (for tests)
-        run: python model/train.py
-
+          flake8 || true
+      - name: Train baseline model (smoke)
+        run: python model/train.py --version v0.1 --seed 42 --out model/model.joblib --metrics out/metrics.json
       - name: Run tests
         run: python -m pytest -q
 
-  train-and-upload:
+  docker-smoke-test:
     needs: lint-and-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      - name: Install deps
-        run: pip install -r requirements.txt
+      - name: Build Docker image for smoke test
+        run: docker build --build-arg MODEL_VERSION=v0.1 -t ci-smoke-test:latest .
 
-      - name: Quick train (smoke)
+      - name: Run smoke test container
         run: |
-          python model/train.py --out models/model.joblib --metrics out/metrics.json --seed 42 --version v0.1
+          docker run -d -p 8000:8000 --name smoke ci-smoke-test:latest
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/health; then
+              echo "✅ Healthcheck passed"
+              break
+            else
+              echo "Waiting for container..."
+              sleep 3
+            fi
+          done
+          curl -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d '{"age":50,"sex":1,"bmi":25.0,"bp":80,"s1":150,"s2":4,"s3":4,"s4":3,"s5":4,"s6":5}' -f
 
-      - name: Upload model artifact
+      - name: Cleanup smoke container
+        if: always()
+        run: docker rm -f smoke
+
+  upload-artifacts:
+    needs: [lint-and-test, docker-smoke-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload model
         uses: actions/upload-artifact@v4
         with:
           name: model-joblib
-          path: models/model.joblib
-
+          path: model/model.joblib
       - name: Upload metrics
         uses: actions/upload-artifact@v4
         with:
