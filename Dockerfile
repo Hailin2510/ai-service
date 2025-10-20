@@ -1,47 +1,37 @@
-# ----------- Stage 1: Builder (train model) -----------
+# ----------- Builder Stage -----------  
 FROM python:3.11-slim AS builder
 
 WORKDIR /src
 
 # Install dependencies
 COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
 COPY model/ ./model
-COPY out/ ./out
 COPY train.py ./train.py
-COPY app/ ./app
+COPY main.py ./main.py
 
 # Train model
 ARG MODEL_VERSION=v0.1
-RUN python train.py --version $MODEL_VERSION --out model/model.joblib --metrics out/metrics.json --seed 42
+RUN python train.py --version ${MODEL_VERSION} --out model/model.joblib --metrics out/metrics.json --seed 42
 
-# ----------- Stage 2: Runtime (FastAPI app) -----------
+# ----------- Runtime Stage -----------  
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Copy trained model and app from builder
+# Copy trained model and app
 COPY --from=builder /src/model ./model
 COPY --from=builder /src/out ./out
-COPY --from=builder /src/app ./app
+COPY --from=builder /src/main.py ./main.py
+COPY requirements.txt .
 
 # Install runtime dependencies
-COPY requirements.txt .
-RUN pip install --upgrade pip && pip install -r requirements.txt
-
-# Set environment variable for app
-ARG MODEL_VERSION=v0.1
-ENV MODEL_VERSION=${MODEL_VERSION}
-ENV MODEL_PATH=/app/model/model.joblib
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # Expose FastAPI port
 EXPOSE 8000
 
-# Healthcheck
-HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-# Run FastAPI app
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use uvicorn options for CI-friendly fast startup
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--workers", "1"]

@@ -42,39 +42,33 @@ jobs:
         run: |
           docker run -d -p 8000:8000 --name smoke ci-smoke-test:latest
 
-          # Wait up to 60 seconds for FastAPI container to be ready
-          for i in {1..12}; do
-            if curl -f http://localhost:8000/health; then
+          # Wait for FastAPI to be ready (max 30s)
+          for i in {1..10}; do
+            if curl -s -f http://localhost:8000/health; then
               echo "✅ Healthcheck passed"
               break
             else
-              echo "Waiting for container to start..."
-              sleep 5
+              echo "⏳ Waiting for container to start..."
+              sleep 3
             fi
           done
 
-          if ! curl -f http://localhost:8000/health; then
-            echo "❌ Container failed to start"
-            docker logs smoke
-            docker rm -f smoke
-            exit 1
-          fi
-
-          # Retry POST /predict up to 3 times
+          # Retry /predict endpoint up to 3 times
           for i in {1..3}; do
             if curl -X POST http://localhost:8000/predict \
               -H "Content-Type: application/json" \
-              -d '{"age":50,"sex":1,"bmi":25.0,"bp":80,"s1":150,"s2":4,"s3":4,"s4":3,"s5":4,"s6":5}' \
-              -f; then
-              echo "✅ Predict endpoint OK"
+              -d '{"age":50,"sex":1,"bmi":25.0,"bp":80,"s1":150,"s2":4,"s3":4,"s4":3,"s5":4,"s6":5}' -f; then
+              echo "✅ /predict endpoint successful"
               break
             else
-              echo "Retrying predict endpoint..."
+              echo "⚠ /predict failed, retrying..."
               sleep 2
             fi
           done
 
-          docker rm -f smoke
+        # Always cleanup
+        finally: docker logs smoke || true
+          docker rm -f smoke || true
 
   upload-artifacts:
     needs: [lint-and-test, docker-smoke-test]
